@@ -41,7 +41,8 @@ export class ClientFactory {
         tokenName: '',
         rankToken: '',
         csrftoken: '',
-        secret: ''
+        secret: '',
+        pk: ''
       },
       proxy: account.proxy,
       isConnected: false,
@@ -111,7 +112,8 @@ export class ClientFactory {
         tokenName: client.state.extractCookieValue('csrftoken') || '',
         rankToken: String(loggedInUser.pk),
         csrftoken: client.state.extractCookieValue('csrftoken') || '',
-        secret: ''
+        secret: '',
+        pk: String(loggedInUser.pk)
       };
 
       session.isConnected = true;

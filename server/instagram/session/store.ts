@@ -62,7 +62,8 @@ export class SessionStore {
         tokenName: data.token_name || '',
         rankToken: data.rank_token || '',
         csrftoken: data.csrftoken || '',
-        secret: decrypt(data.secret || '')
+        secret: decrypt(data.secret || ''),
+        pk: data.rank_token || ''
       };
     } catch (err) {
       logger.error({ accountId, error: err }, 'Failed to get session');
@@ -110,7 +111,8 @@ export class SessionStore {
           tokenName: row.token_name || '',
           rankToken: row.rank_token || '',
           csrftoken: row.csrftoken || '',
-          secret: decrypt(row.secret || '')
+          secret: decrypt(row.secret || ''),
+          pk: row.rank_token || ''
         },
         lastUsed: new Date(row.updated_at)
       }));

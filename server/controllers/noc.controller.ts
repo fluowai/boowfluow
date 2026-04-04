@@ -1,8 +1,5 @@
 import { Request, Response } from 'express';
 import { supabase } from '../supabase';
-
-import { Request, Response } from 'express';
-import { supabase } from '../supabase';
 import { whatsappService } from '../whatsapp';
 
 export const nocController = {

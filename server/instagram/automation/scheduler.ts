@@ -64,6 +64,8 @@ export class AutomationScheduler {
   private intervals: Map<string, NodeJS.Timeout> = new Map();
   private postSchedulerInterval: NodeJS.Timeout | null = null;
   private clientFactory: ClientFactory | null = null;
+  private scheduledPosts: Map<string, ScheduledPost[]> = new Map();
+  private jobs: Map<string, AutomationJob[]> = new Map();
 
   constructor() {}
 
@@ -111,7 +113,7 @@ export class AutomationScheduler {
     }
   }
 
-  async schedulePost(post: Omit<ScheduledPost, 'id' | 'status' | 'createdAt'>) {
+  async schedulePost(post: Omit<ScheduledPost, 'id' | 'status' | 'createdAt'> & { media_url?: string }) {
     const { data, error } = await supabase
       .from('instagram_scheduled_posts')
       .insert({
@@ -256,7 +258,7 @@ export class AutomationScheduler {
 
           for (const comment of comments) {
             // Skip own comments
-            if (comment.user_id === session.sessionData.pk) continue;
+            if (String(comment.user_id) === String(session.sessionData.pk)) continue;
 
             const text = comment.text.toLowerCase();
             
@@ -269,7 +271,7 @@ export class AutomationScheduler {
             if (matchingRule) {
               // Check if already replied to this comment (we could use a cache or a table)
               // For now, simpler: check if any child comment is from us
-              const hasReplied = comments.some(c => c.parent_comment_id === comment.pk && c.user_id === session.sessionData.pk);
+              const hasReplied = comments.some(c => (c as any).parent_comment_id === comment.pk && String(c.user_id) === String(session.sessionData.pk));
               
               if (!hasReplied) {
                 logger.info({ accountId, commentId: comment.pk }, `Matching rule found! Replying: ${matchingRule.reply_text}`);

@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://fluowai-boowfluow-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/socket.io/:path*",
+      "destination": "https://fluowai-boowfluow-production.up.railway.app/socket.io/:path*"
+    }
+  ],
+  "framework": "vite"
+}

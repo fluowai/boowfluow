@@ -22,6 +22,7 @@ export interface EncryptedSession {
   rankToken: string;
   csrftoken: string;
   secret: string;
+  pk: string;
 }
 
 export interface InstagramSession {

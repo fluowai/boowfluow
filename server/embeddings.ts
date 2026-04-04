@@ -19,7 +19,7 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
       return null;
     }
 
-    const genAI = new GoogleGenAI(apiKey);
+    const genAI = new GoogleGenAI(apiKey) as any;
     const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
 
     // 2. Chama API de Embeddings (Suporta até 768 dimensões)

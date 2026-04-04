@@ -56,6 +56,7 @@ export function toCanonicalMessage(input: any, isFromMe: boolean = false): Canon
       vcardName: input.vcard_name || null,
       vcardPhone: input.vcard_phone || null,
       groupName: input.group_name || null,
+      isInstagram: false,
       __normalized: true,
       raw: input
     };
@@ -152,6 +153,7 @@ export function toCanonicalMessage(input: any, isFromMe: boolean = false): Canon
     vcardName: input.vcard_name || null,
     vcardPhone: input.vcard_phone || null,
     groupName: input.group_name || null,
+    isInstagram: false,
     __normalized: true,
     raw: msg
   };
