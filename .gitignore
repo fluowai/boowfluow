@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+.wwebjs_auth/
+.wwebjs_cache/
+node_modules/
+.env.local

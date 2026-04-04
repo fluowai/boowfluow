@@ -208,181 +208,181 @@ export function ConversationsPanel({ instances }: ConversationsPanelProps) {
   }, [selectedChat]);
 
   // Socket.io Realtime Listener (Arquitetura 3 Camadas)
-  useEffect(() => {
-    if (!activeInstanceName) return;
+  const handleNewMessage = useCallback((data: any) => {
+    // Regra de Ouro: Checagem Segura e Normalizada de Nomes
+    const payloadInstance = data.instanceId?.toLowerCase();
+    const currentInstance = activeInstanceName.toLowerCase();
+    if (payloadInstance && payloadInstance !== currentInstance) return;
+    
+    // O payoff agora é o próprio objeto canônico (Arquitetura 3 Camadas)
+    const normalizedMsg = toCanonicalMessage(data);
+    if (!normalizedMsg) return;
 
-    const handleNewMessage = useCallback((data: any) => {
-      // Regra de Ouro: Checagem Segura e Normalizada de Nomes
-      const payloadInstance = data.instanceId?.toLowerCase();
-      const currentInstance = activeInstanceName.toLowerCase();
-      if (payloadInstance && payloadInstance !== currentInstance) return;
-      
-      // O payoff agora é o próprio objeto canônico (Arquitetura 3 Camadas)
-      const normalizedMsg = toCanonicalMessage(data);
-      if (!normalizedMsg) return;
+    const msgJid = normalizedMsg.remoteJid;
+    
+    const currentSelectedJid = selectedChatRef.current?.id?._serialized;
 
-      const msgJid = normalizedMsg.remoteJid;
-      
-      const currentSelectedJid = selectedChatRef.current?.id?._serialized;
-
-      // 1. Atualiza Mensagens da Conversa Aberta
-      if (currentSelectedJid === msgJid) {
-        setMessages(prev => {
-          // Se já existe, ignora (evita duplicidade do socket vs otimista)
-          if (prev.find(m => m.id === normalizedMsg.id)) return prev;
-          
-          if (normalizedMsg.fromMe) {
-            const tempIndex = prev.findIndex(m => 
-              typeof m.id === 'string' && m.id.startsWith('temp-') && m.body === normalizedMsg.body
-            );
-            if (tempIndex !== -1) {
-              const updated = [...prev];
-              updated[tempIndex] = normalizedMsg;
-              return updated;
-            }
+    // 1. Atualiza Mensagens da Conversa Aberta
+    if (currentSelectedJid === msgJid) {
+      setMessages(prev => {
+        // Se já existe, ignora (evita duplicidade do socket vs otimista)
+        if (prev.find(m => m.id === normalizedMsg.id)) return prev;
+        
+        if (normalizedMsg.fromMe) {
+          const tempIndex = prev.findIndex(m => 
+            typeof m.id === 'string' && m.id.startsWith('temp-') && m.body === normalizedMsg.body
+          );
+          if (tempIndex !== -1) {
+            const updated = [...prev];
+            updated[tempIndex] = normalizedMsg;
+            return updated;
           }
-          
-          const newMessages = [...prev, normalizedMsg];
-          return newMessages.sort((a, b) => a.timestamp - b.timestamp);
-        });
+        }
+        
+        const newMessages = [...prev, normalizedMsg];
+        return newMessages.sort((a, b) => a.timestamp - b.timestamp);
+      });
+    }
+    
+    // 2. Sidebar Dispatcher: Atualiza Lista Lateral (chats) e Reordena
+    setChats(prevChats => {
+      const chatIndex = prevChats.findIndex(c => c.id._serialized === msgJid);
+      const updatedChats = [...prevChats];
+
+      const isCurrentlyOpen = currentSelectedJid === msgJid;
+
+      if (chatIndex !== -1) {
+        const chat = { ...updatedChats[chatIndex] };
+        
+        // Atualiza dados da última mensagem
+        chat.lastMessage = normalizedMsg;
+        chat.timestamp = normalizedMsg.timestamp;
+        
+        // Incrementa não lidas se não for minha e não estiver com o chat aberto lendo ativamente
+        if (!normalizedMsg.fromMe && !isCurrentlyOpen) {
+          chat.unreadCount = (chat.unreadCount || 0) + 1;
+        }
+
+        // Move para o topo
+        updatedChats.splice(chatIndex, 1);
+        updatedChats.unshift(chat);
+      } else {
+        // Caso a conversa não esteja na lista (ex: nova conversa inédita), adota formato genérico
+        // [V3-FIX] Previne que JIDs @lid exibam hashes como nome do chat
+        const rawUser = msgJid.split('@')[0];
+        const isLid = msgJid.includes('@lid');
+        
+        // Cascata de nome: senderName humano → authorName humano → phone formatado → label genérico
+        let chatName = '';
+        if (normalizedMsg.senderName && isDisplayableHumanName(normalizedMsg.senderName)) {
+          chatName = normalizedMsg.senderName;
+        } else if (normalizedMsg.authorName && isDisplayableHumanName(normalizedMsg.authorName)) {
+          chatName = normalizedMsg.authorName;
+        } else if (!isLid && rawUser.length <= 15) {
+          chatName = `+${rawUser}`;
+        } else {
+          chatName = 'Contato';
+        }
+        
+        const newChat = {
+          id: { _serialized: msgJid, user: rawUser },
+          isGroup: msgJid.includes('@g.us'),
+          isNewsletter: msgJid.includes('@newsletter'),
+          name: chatName,
+          unreadCount: normalizedMsg.fromMe || isCurrentlyOpen ? 0 : 1,
+          timestamp: normalizedMsg.timestamp,
+          lastMessage: normalizedMsg,
+          profilePic: null
+        };
+        
+        updatedChats.unshift(newChat);
+        console.log(`[Socket/Forense] Injetado novo chat dinamicamente para o JID: ${msgJid} (name: ${chatName})`);
+      }
+
+      return updatedChats;
+    });
+  }, [activeInstanceName, setMessages, setChats]);
+
+  // [NOVO] Listener para Enriquecimento Progressivo (Qualidade que aparece depois)
+  const handleMessageUpdate = useCallback((data: any) => {
+    const payloadInstance = data.instanceId?.toLowerCase();
+    if (payloadInstance && payloadInstance !== activeInstanceName.toLowerCase()) return;
+    
+    const currentSelectedJid = selectedChatRef.current?.id?._serialized;
+    if (data.chatId !== currentSelectedJid && data.jid !== currentSelectedJid) return;
+
+    const enrichedMsg = data.message;
+    if (!enrichedMsg) return;
+
+    setMessages(prev => {
+      const index = prev.findIndex(m => m.id === enrichedMsg.id || m.id === data.messageId);
+      if (index === -1) return prev; // Não temos essa mensagem na lista atual
+      
+      const newMessages = [...prev];
+      newMessages[index] = enrichedMsg; // Substitui pela versão com alta qualidade
+      return newMessages;
+    });
+  }, [activeInstanceName, setMessages]);
+
+  // [NOVO] Listener específico e veloz para Atualizações de Status de Mídia da Fila Assíncrona
+  const handleMediaUpdate = useCallback((data: any) => {
+    const currentSelectedJid = selectedChatRef.current?.id?._serialized;
+    if (data.chatId !== currentSelectedJid) return;
+
+    setMessages(prev => {
+      const index = prev.findIndex(m => m.id === data.messageId || m.id === data.waMessageId || m.raw?.id?._serialized === data.waMessageId || m.raw?.message_id === data.messageId);
+      if (index === -1) return prev;
+
+      const newMessages = [...prev];
+      const updatedMsg = { ...newMessages[index] };
+      
+      // Garante que o objeto media existe e atualiza as chaves
+      updatedMsg.media = {
+        ...(updatedMsg.media || {}),
+        status: data.mediaStatus,
+        url: data.mediaUrl || updatedMsg.media?.url,
+        error: data.mediaError,
+        hasMedia: true
+      };
+
+      newMessages[index] = updatedMsg;
+      return newMessages;
+    });
+  }, [setMessages]);
+
+  const handleContactUpdate = useCallback((data: any) => {
+    const payloadInstance = data.instanceId?.toLowerCase();
+    if (payloadInstance && payloadInstance !== activeInstanceName.toLowerCase()) return;
+
+    setChats(prevChats => {
+      const index = prevChats.findIndex(c => c.id._serialized === data.jid);
+      if (index === -1) return prevChats;
+
+      const updatedChats = [...prevChats];
+      const chat = { ...updatedChats[index] };
+      
+      // [PUSHNAME-MERGE] Usa isDisplayableHumanName para decidir se atualiza
+      const newName = data.name || data.pushname;
+      const currentNameIsHuman = isDisplayableHumanName(chat.name);
+      const newNameIsHuman = isDisplayableHumanName(newName);
+      
+      // Atualiza se: nome novo é humano E (nome atual não é humano OU nome novo é diferente/melhor)
+      if (newNameIsHuman && (!currentNameIsHuman || !chat.name)) {
+        chat.name = newName;
+        chat.pushname = data.pushname || chat.pushname;
+        chat.identityQuality = data.identityQuality || 'rich';
+        if (data.profilePic) chat.profilePic = data.profilePic;
+        
+        updatedChats[index] = chat;
+        console.log(`[Socket/Identity] Sidebar enriched: ${data.jid} -> ${chat.name}`);
       }
       
-      // 2. Sidebar Dispatcher: Atualiza Lista Lateral (chats) e Reordena
-      setChats(prevChats => {
-        const chatIndex = prevChats.findIndex(c => c.id._serialized === msgJid);
-        const updatedChats = [...prevChats];
+      return updatedChats;
+    });
+  }, [activeInstanceName, setChats]);
 
-        const isCurrentlyOpen = currentSelectedJid === msgJid;
-
-        if (chatIndex !== -1) {
-          const chat = { ...updatedChats[chatIndex] };
-          
-          // Atualiza dados da última mensagem
-          chat.lastMessage = normalizedMsg;
-          chat.timestamp = normalizedMsg.timestamp;
-          
-          // Incrementa não lidas se não for minha e não estiver com o chat aberto lendo ativamente
-          if (!normalizedMsg.fromMe && !isCurrentlyOpen) {
-            chat.unreadCount = (chat.unreadCount || 0) + 1;
-          }
-
-          // Move para o topo
-          updatedChats.splice(chatIndex, 1);
-          updatedChats.unshift(chat);
-        } else {
-          // Caso a conversa não esteja na lista (ex: nova conversa inédita), adota formato genérico
-          // [V3-FIX] Previne que JIDs @lid exibam hashes como nome do chat
-          const rawUser = msgJid.split('@')[0];
-          const isLid = msgJid.includes('@lid');
-          
-          // Cascata de nome: senderName humano → authorName humano → phone formatado → label genérico
-          let chatName = '';
-          if (normalizedMsg.senderName && isDisplayableHumanName(normalizedMsg.senderName)) {
-            chatName = normalizedMsg.senderName;
-          } else if (normalizedMsg.authorName && isDisplayableHumanName(normalizedMsg.authorName)) {
-            chatName = normalizedMsg.authorName;
-          } else if (!isLid && rawUser.length <= 15) {
-            chatName = `+${rawUser}`;
-          } else {
-            chatName = 'Contato';
-          }
-          
-          const newChat = {
-            id: { _serialized: msgJid, user: rawUser },
-            isGroup: msgJid.includes('@g.us'),
-            isNewsletter: msgJid.includes('@newsletter'),
-            name: chatName,
-            unreadCount: normalizedMsg.fromMe || isCurrentlyOpen ? 0 : 1,
-            timestamp: normalizedMsg.timestamp,
-            lastMessage: normalizedMsg,
-            profilePic: null
-          };
-          
-          updatedChats.unshift(newChat);
-          console.log(`[Socket/Forense] Injetado novo chat dinamicamente para o JID: ${msgJid} (name: ${chatName})`);
-        }
-
-        return updatedChats;
-      });
-    }, [activeInstanceName]);
-
-    // [NOVO] Listener para Enriquecimento Progressivo (Qualidade que aparece depois)
-    const handleMessageUpdate = useCallback((data: any) => {
-      const payloadInstance = data.instanceId?.toLowerCase();
-      if (payloadInstance && payloadInstance !== activeInstanceName.toLowerCase()) return;
-      
-      const currentSelectedJid = selectedChatRef.current?.id?._serialized;
-      if (data.chatId !== currentSelectedJid && data.jid !== currentSelectedJid) return;
-
-      const enrichedMsg = data.message;
-      if (!enrichedMsg) return;
-
-      setMessages(prev => {
-        const index = prev.findIndex(m => m.id === enrichedMsg.id || m.id === data.messageId);
-        if (index === -1) return prev; // Não temos essa mensagem na lista atual
-        
-        const newMessages = [...prev];
-        newMessages[index] = enrichedMsg; // Substitui pela versão com alta qualidade
-        return newMessages;
-      });
-    }, [activeInstanceName]);
-
-    // [NOVO] Listener específico e veloz para Atualizações de Status de Mídia da Fila Assíncrona
-    const handleMediaUpdate = useCallback((data: any) => {
-      const currentSelectedJid = selectedChatRef.current?.id?._serialized;
-      if (data.chatId !== currentSelectedJid) return;
-
-      setMessages(prev => {
-        const index = prev.findIndex(m => m.id === data.messageId || m.id === data.waMessageId || m.raw?.id?._serialized === data.waMessageId || m.raw?.message_id === data.messageId);
-        if (index === -1) return prev;
-
-        const newMessages = [...prev];
-        const updatedMsg = { ...newMessages[index] };
-        
-        // Garante que o objeto media existe e atualiza as chaves
-        updatedMsg.media = {
-          ...(updatedMsg.media || {}),
-          status: data.mediaStatus,
-          url: data.mediaUrl || updatedMsg.media?.url,
-          error: data.mediaError,
-          hasMedia: true
-        };
-
-        newMessages[index] = updatedMsg;
-        return newMessages;
-      });
-    }, []);
-
-    const handleContactUpdate = useCallback((data: any) => {
-      const payloadInstance = data.instanceId?.toLowerCase();
-      if (payloadInstance && payloadInstance !== activeInstanceName.toLowerCase()) return;
-
-      setChats(prevChats => {
-        const index = prevChats.findIndex(c => c.id._serialized === data.jid);
-        if (index === -1) return prevChats;
-
-        const updatedChats = [...prevChats];
-        const chat = { ...updatedChats[index] };
-        
-        // [PUSHNAME-MERGE] Usa isDisplayableHumanName para decidir se atualiza
-        const newName = data.name || data.pushname;
-        const currentNameIsHuman = isDisplayableHumanName(chat.name);
-        const newNameIsHuman = isDisplayableHumanName(newName);
-        
-        // Atualiza se: nome novo é humano E (nome atual não é humano OU nome novo é diferente/melhor)
-        if (newNameIsHuman && (!currentNameIsHuman || !chat.name)) {
-          chat.name = newName;
-          chat.pushname = data.pushname || chat.pushname;
-          chat.identityQuality = data.identityQuality || 'rich';
-          if (data.profilePic) chat.profilePic = data.profilePic;
-          
-          updatedChats[index] = chat;
-          console.log(`[Socket/Identity] Sidebar enriched: ${data.jid} -> ${chat.name}`);
-        }
-        
-        return updatedChats;
-      });
-    }, [activeInstanceName]);
+  useEffect(() => {
+    if (!activeInstanceName) return;
 
     // Inscrição dos Listeners da Arquitetura 3 Camadas
     whatsappService.on('message:new', handleNewMessage);
@@ -397,7 +397,7 @@ export function ConversationsPanel({ instances }: ConversationsPanelProps) {
       whatsappService.off('message:media_update', handleMediaUpdate);
       whatsappService.off('contact:update', handleContactUpdate);
     };
-  }, [activeInstanceName]);
+  }, [activeInstanceName, handleNewMessage, handleMessageUpdate, handleMediaUpdate, handleContactUpdate]);
 
   return (
     <div className="flex bg-white shadow-sm overflow-hidden h-[calc(100vh-64px)] w-full absolute inset-0 pt-16" style={{ zIndex: 0 }}>

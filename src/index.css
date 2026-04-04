@@ -1,1 +1,68 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-family, "Inter"), system-ui, -apple-system, sans-serif;
+  --color-brand: var(--color-primary, #3b82f6);
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+}
+
+:root {
+  /* Whitelabel Variables (Default/Fallback) */
+  --color-primary: #3b82f6;
+  --color-background: #F8FAFC;
+  --color-text: #0F172A;
+  --font-family: 'Inter';
+
+  /* UI Tokens */
+  --text-primary: var(--color-text);
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+  --border-soft: #EEF2F7;
+  --bg-soft: var(--color-background);
+  --bg-active: #EEF4FF;
+  --accent-soft: #EEF2FF;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+/* Scrollbar Customization for a cleaner look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E2E8F0;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #CBD5E1;
+}
+
+/* Transitions for Sidebar and UI elements */
+.transition-sidebar {
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

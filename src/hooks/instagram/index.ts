@@ -1,0 +1,1 @@
+export { useInstagramAccounts } from './useAccounts';

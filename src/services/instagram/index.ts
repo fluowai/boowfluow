@@ -1,0 +1,1 @@
+export { instagramApi } from './api';

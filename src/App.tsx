@@ -56,6 +56,9 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
+import { AuthPage } from './components/auth/AuthPage';
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
+import { AnimatedBackground } from './components/ui/AnimatedBackground';
 
 // Data placeholders for dashboard
 const evolutionData = [
@@ -141,6 +144,11 @@ export default function App() {
     knowledge: ''
   });
 
+  // Novos Estados de Auth e Perfil
+  const [session, setSession] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
   // Mantém o Ref sincronizado com o State para que os listeners de socket sempre vejam os dados atuais
   useEffect(() => {
     instancesRef.current = whatsappInstances;
@@ -156,12 +164,57 @@ export default function App() {
     selectedWhatsAppInstanceRef.current = selectedWhatsAppInstance;
   }, [selectedInstanceName, selectedWhatsAppInstance]);
 
-  // EFFECT 1: Setup inicial (roda 1x apenas)
+  // EFFECT 1: Setup inicial (Gerenciamento de Sessão e Perfil)
   useEffect(() => {
     whatsappService.connect();
-    loadInstances();
-    fetchMyAgents();
-  }, []); // Sem dependências - roda 1x no mount
+
+    // 1. Monitora mudanças de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`[Auth] Evento: ${event}`);
+      setSession(session);
+      
+      if (session) {
+        await fetchProfile(session.user.id);
+        loadInstances();
+        fetchMyAgents();
+      } else {
+        setProfile(null);
+        setIsInitialLoading(false);
+      }
+    });
+
+    // 2. Checagem inicial de sessão
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        fetchProfile(session.user.id);
+        loadInstances();
+        fetchMyAgents();
+      } else {
+        setIsInitialLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchProfile = async (uid: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .single();
+      
+      if (error) throw error;
+      setProfile(data);
+      if (data.role) setUserRole(data.role);
+    } catch (err) {
+      console.error('[App] Erro ao buscar perfil:', err);
+    } finally {
+      setIsInitialLoading(false);
+    }
+  };
 
   // EFFECT 2: Listeners para instância (roda 1x, usa refs)
   useEffect(() => {
@@ -460,6 +513,63 @@ export default function App() {
     }
   };
 
+  // --- CONTROLE DE RENDERIZAÇÃO ---
+  
+  // 1. Carregamento Inicial (Splash Screen Premium)
+  if (isInitialLoading) {
+    return (
+      <div className="h-screen w-screen relative flex flex-col items-center justify-center gap-10 overflow-hidden font-sans">
+        <AnimatedBackground />
+        
+        <div className="relative z-10 flex flex-col items-center">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1 }}
+            className="h-24 w-24 bg-white/40 backdrop-blur-3xl rounded-[32px] flex items-center justify-center shadow-2xl border border-white/50 mb-6"
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            >
+              <Zap className="text-brand fill-current" size={48} />
+            </motion.div>
+          </motion.div>
+          
+          <div className="text-center space-y-2">
+            <motion.h1 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-2xl font-black text-slate-900 tracking-tighter uppercase"
+            >
+              Fluow Ai
+            </motion.h1>
+            <div className="flex items-center justify-center gap-1.5">
+               <motion.div 
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+                className="h-1.5 w-1.5 bg-brand rounded-full"
+               />
+               <p className="text-slate-400 font-bold uppercase tracking-[0.4em] text-[10px]">Sincronizando Sistema</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Login / Cadastro
+  if (!session) {
+    return <AuthPage />;
+  }
+
+  // 3. Onboarding
+  if (profile && !profile.onboarding_completed) {
+    return <OnboardingWizard onComplete={() => fetchProfile(session.user.id)} />;
+  }
+
+  // 4. Aplicação Principal (Layout Restrito)
   return (
     <div className="flex h-screen bg-[#F8FAFC] font-sans text-[#0F172A] overflow-hidden">
       {/* Sidebar Principal */}
@@ -514,24 +624,32 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8">
           <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">{activeTab}</span>
-          <div className="flex items-center gap-3">
-             <span className="text-xs font-bold text-slate-400">Ver como:</span>
-             <select 
-               value={userRole} 
-               onChange={(e) => {
-                 const newRole = e.target.value as any;
-                 setUserRole(newRole);
-                 if (newRole === 'equipe' && (activeTab === 'Configurações' || activeTab === 'Conexão')) {
-                   setActiveTab('Dashboard');
-                 }
-               }}
-               className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-700 outline-none hover:border-blue-500 transition-colors"
+          <div className="flex items-center gap-4">
+             {/* Role Selector para Debug/MegaAdmin */}
+             {userRole === 'mega_super_admin' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400">ROLE:</span>
+                  <select 
+                    value={userRole} 
+                    onChange={(e) => setUserRole(e.target.value as any)}
+                    className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 outline-none"
+                  >
+                    <option value="mega_super_admin">Mega Admin</option>
+                    <option value="super_admin">Super Admin</option>
+                    <option value="admin">Admin</option>
+                    <option value="equipe">Equipe</option>
+                  </select>
+                </div>
+             )}
+             
+             {/* Botão de Logout */}
+             <button 
+              onClick={() => supabase.auth.signOut()}
+              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+              title="Sair do sistema"
              >
-               <option value="mega_super_admin">Mega Super Admin</option>
-               <option value="super_admin">Super Admin (Whitelabel)</option>
-               <option value="admin">Admin (Cliente)</option>
-               <option value="equipe">Equipe (Atendente)</option>
-             </select>
+                <LogOut size={18} />
+             </button>
           </div>
         </header>
         <div className={cn("flex-1 overflow-y-auto w-full mx-auto relative", activeTab === 'Conversas' ? "p-0 max-w-full" : "p-8 max-w-[1400px]")}>
